@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+
+# Database
+*.db
+*.sqlite3
+
+# Vector Index (Local)
+faiss_index.index
+faiss_index_metadata.json
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
