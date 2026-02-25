@@ -18,6 +18,8 @@ python-docx>=1.1.0
 pdfminer.six>=20221105
 easyocr>=1.7.1
 Pillow>=10.2.0
+# Pin python-bidi to last pure-Python version (newer versions require Rust/Cargo)
+python-bidi==0.4.2
 
 # Database
 sqlalchemy>=2.0.25

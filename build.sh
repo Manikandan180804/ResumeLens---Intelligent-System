@@ -4,6 +4,6 @@ set -e
 
 echo "==> Installing Python dependencies..."
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install --extra-index-url https://download.pytorch.org/whl/cpu -r requirements.txt
 
 echo "==> Build complete!"
