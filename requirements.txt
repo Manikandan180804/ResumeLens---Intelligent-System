@@ -12,6 +12,11 @@ langchain-core>=0.1.23
 faiss-cpu>=1.7.4
 sentence-transformers>=2.3.1
 
+# PyTorch - CPU only (avoids downloading 4GB of CUDA/GPU libraries on Render)
+# These +cpu variants are resolved via --extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.5.1+cpu
+torchvision==0.20.1+cpu
+
 # PDF & Document Processing
 PyPDF2>=3.0.1
 python-docx>=1.1.0
