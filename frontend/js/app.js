@@ -1,6 +1,8 @@
-const BASE_URL = window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
-    ? 'http://localhost:8000'
-    : `http://${window.location.hostname}:8000`;
+// On Render (or any deployed host), the FastAPI backend serves the frontend itself,
+// so we use the same origin. Locally (port 5500/3000), we point to port 8000.
+const BASE_URL = (window.location.port === '8000' || window.location.port === '' || window.location.protocol === 'https:')
+    ? ''   // same-origin: FastAPI serves both API + frontend
+    : 'http://localhost:8000';  // local dev: separate frontend server
 
 // View Map
 const views = {
@@ -74,7 +76,7 @@ async function checkBackendStatus() {
     const indicator = document.querySelector('.status-indicator');
     const statusText = document.querySelector('.status-value');
     try {
-        const res = await fetch(`${BASE_URL}/`, { method: 'GET' });
+        const res = await fetch(`${BASE_URL}/health`, { method: 'GET' });
         if (res.ok) {
             indicator.className = 'status-indicator online';
             statusText.innerText = 'Connected';

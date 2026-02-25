@@ -36,8 +36,9 @@ pydantic-settings>=2.1.0
 # Visualization
 plotly>=5.18.0
 
-# OpenAI
+# OpenAI & Groq LLM
 openai>=1.12.0
+groq>=0.4.0
 
 # Utilities
 python-dotenv>=1.0.0

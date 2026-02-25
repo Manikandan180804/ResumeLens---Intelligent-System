@@ -4,11 +4,13 @@ FastAPI Backend - Main API application with all endpoints.
 import logging
 import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import List, Optional, Dict, Any
 
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -44,6 +46,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ─── Serve the frontend static files ───────────────────────────────────────────
+# Resolve the frontend directory relative to this file so it works both
+# locally and on Render.
+_FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
+
+if _FRONTEND_DIR.exists():
+    # Mount static assets (css/, js/) at /static
+    app.mount("/static", StaticFiles(directory=str(_FRONTEND_DIR)), name="frontend_static")
+
 
 @app.on_event("startup")
 async def startup_event():
@@ -53,9 +64,12 @@ async def startup_event():
     logger.info("Database tables created/verified.")
 
 
-@app.get("/")
-async def root():
-    """Health check endpoint."""
+@app.get("/", include_in_schema=False)
+async def serve_index():
+    """Serve the frontend SPA."""
+    index_path = _FRONTEND_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(str(index_path))
     return {"status": "online", "message": "Resume Intelligence API is running"}
 
 
@@ -111,8 +125,8 @@ class EvaluationResponse(BaseModel):
 # ─────────────────────────────── Root Endpoints ───────────────────────────────
 
 
-@app.get("/")
-async def root():
+@app.get("/api", include_in_schema=False)
+async def api_info():
     return {
         "message": "Resume Intelligence API",
         "version": settings.APP_VERSION,
