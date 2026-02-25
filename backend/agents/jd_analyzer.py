@@ -11,22 +11,88 @@ logger = logging.getLogger(__name__)
 
 
 def extract_job_title(text: str) -> str:
-    """Extract job title from job description."""
-    lines = [l.strip() for l in text.split('\n') if l.strip()][:5]
-    title_patterns = [
-        r'^(?:job\s+title|position|role)[:\s]+(.+)$',
-        r'^(senior|junior|lead|principal|staff)?\s*(.+?(?:engineer|developer|analyst|scientist|architect|manager|designer))',
+    """Extract job title from job description using progressive strategies."""
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
+
+    # Patterns for lines we should skip (contact info, generic headers)
+    skip_patterns = [
+        r'[\w\.-]+@[\w\.-]+\.\w+',
+        r'\+?\d[\d\s\-\(\)]{7,}',
+        r'https?://\S+',
+        r'\b(?:pincode|zip|address|location|office|remote|city|state|country)\b',
+        r'\b(?:about\s+(?:us|the\s+company)|benefits|responsibilities|requirements|qualifications|overview)\b',
+        r'^[0-9\W]+$',
     ]
-    for line in lines:
-        for pattern in title_patterns:
-            match = re.search(pattern, line, re.IGNORECASE)
-            if match:
-                title = match.group(1).strip() if len(match.groups()) == 1 else match.group(0).strip()
+
+    role_suffixes = (
+        r'engineer|developer|analyst|scientist|architect|manager|designer|'
+        r'representative|assistant|specialist|lead|consultant|director|'
+        r'officer|coordinator|intern|associate|executive|administrator|'
+        r'technician|operator|supervisor|advisor|strategist'
+    )
+
+    def is_skip(line):
+        return any(re.search(sp, line, re.IGNORECASE) for sp in skip_patterns)
+
+    # Strategy 1: Explicit label e.g. "Job Title: Data Scientist"
+    label_pat = re.compile(
+        r'^(?:job\s+title|position(?:\s+title)?|role|opening)[:\s]+(.{3,80})$',
+        re.IGNORECASE
+    )
+    for line in lines[:20]:
+        m = label_pat.match(line)
+        if m:
+            return m.group(1).strip()[:100]
+
+    # Strategy 2: Line starting with a known role keyword (first 30 lines)
+    role_line_pat = re.compile(
+        rf'^((?:senior|junior|lead|principal|staff|associate|mid[\s-]level|'
+        rf'entry[\s-]level|chief)?\s*[\w\s\-/]+?(?:{role_suffixes})[\w\s\-/]{{0,30}})',
+        re.IGNORECASE
+    )
+    for line in lines[:30]:
+        if is_skip(line):
+            continue
+        m = role_line_pat.match(line)
+        if m:
+            title = m.group(1).strip()
+            if len(title) <= 80:
                 return title[:100]
-    
-    # If no pattern matches, take first line but keep it short
-    default_title = lines[0] if lines else "Unknown Position"
-    return default_title[:100]
+
+    # Strategy 3: Hiring phrase in first 3000 chars
+    hire_pat = re.compile(
+        rf'(?:seeking|looking\s+for|hiring(?:\s+an?)?|we\s+are\s+hiring\s*[:\-,]?\s*(?:an?)?|'
+        rf'role\s+(?:of|is)|position\s+(?:of|is))\s+'
+        rf'((?:senior|junior|lead|principal)?\s*[\w\s\-/]{{3,60}}?(?:{role_suffixes}))',
+        re.IGNORECASE
+    )
+    m = hire_pat.search(text[:3000])
+    if m:
+        return m.group(1).strip()[:100]
+
+    # Strategy 4: Any capitalised role phrase in first 2000 chars
+    cap_pat = re.compile(
+        rf'\b((?:[A-Z][a-zA-Z\-]{{1,20}}\s+){{0,4}}(?:{role_suffixes}))\b'
+    )
+    m = cap_pat.search(text[:2000])
+    if m:
+        candidate = m.group(1).strip()
+        if 3 < len(candidate) <= 80:
+            return candidate[:100]
+
+    # Strategy 5: First short, clean, non-generic line
+    generic_pat = re.compile(
+        r'\b(job\s+description|job\s+post(?:ing)?|career|opportunity|'
+        r'vacancy|advertisement|about\s+the\s+role|role\s+summary)\b',
+        re.IGNORECASE
+    )
+    for line in lines[:20]:
+        if is_skip(line) or generic_pat.search(line):
+            continue
+        if 3 <= len(line) <= 70:
+            return line[:100]
+
+    return "Position Not Specified"
 
 
 def extract_experience_requirement(text: str) -> float:

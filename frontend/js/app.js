@@ -110,12 +110,14 @@ function switchView(viewName) {
     setTimeout(() => {
         container.innerHTML = '<div class="loader-inline"></div>';
         if (views[viewName]) {
-            try {
-                views[viewName](container);
-            } catch (err) {
+            // Use Promise.resolve to properly handle both sync and async view functions
+            Promise.resolve(views[viewName](container)).catch(err => {
                 console.error(`[SwitchView] Error rendering ${viewName}:`, err);
                 container.innerHTML = `<div class="error-state">Failed to load ${viewName}. Please try refreshing.</div>`;
-            }
+            });
+        } else {
+            console.warn(`[SwitchView] No view registered for: ${viewName}`);
+            container.innerHTML = `<div class="error-state">View "${viewName}" not found.</div>`;
         }
         container.classList.add('fade-in');
         if (window.lucide) lucide.createIcons();
@@ -498,6 +500,7 @@ function handleFilePreview(event, previewContainer) {
 }
 
 async function handleRunEvaluation() {
+    const runBtn = document.getElementById('run-eval-btn');
     const resumeFile = document.getElementById('resume-file').files[0];
     const resumeText = document.getElementById('resume-text').value;
     const jdFile = document.getElementById('jd-file').files[0];
@@ -506,6 +509,8 @@ async function handleRunEvaluation() {
     const jdCompany = document.getElementById('jd-company').value;
 
     console.log('Starting Evaluation:', { resumeFile, resumeText: !!resumeText, jdFile, jdTitle, jdText: !!jdText });
+
+    if (runBtn.disabled) return; // Prevent parallel submission
 
     if (!resumeFile && (!resumeText || !resumeText.trim())) {
         showNotification('Please upload a resume or paste resume text', 'warning');
@@ -517,6 +522,9 @@ async function handleRunEvaluation() {
         return;
     }
 
+    // Enter loading state
+    runBtn.disabled = true;
+    runBtn.innerHTML = '<span class="loader-sm"></span> Analyzing...';
     const loader = document.getElementById('eval-loading');
     loader.classList.remove('hidden');
 
@@ -571,13 +579,17 @@ async function handleRunEvaluation() {
 
         console.log('Analysis Complete:', evalRes);
 
+        // Success!
         loader.classList.add('hidden');
         renderFullResult(evalRes);
 
     } catch (e) {
         loader.classList.add('hidden');
-        console.error('Evaluation Error:', e);
+        runBtn.disabled = false;
+        runBtn.innerHTML = '<i data-lucide="zap"></i> Run Evaluation';
+        if (window.lucide) lucide.createIcons();
 
+        console.error('Evaluation Error:', e);
         let errorMsg = 'Evaluation failed';
         try {
             const errorObj = JSON.parse(e.message);
@@ -585,7 +597,6 @@ async function handleRunEvaluation() {
         } catch (err) {
             errorMsg = e.message || errorMsg;
         }
-
         showNotification(errorMsg, 'error');
     }
 }
@@ -856,9 +867,14 @@ async function renderResumes(container) {
 
                         <div class="card-footer">
                             <span class="date">Added ${new Date().toLocaleDateString()}</span>
-                            <button class="ghost-btn" onclick="showNotification('Profile deep-view is in development', 'info')">
-                                View Full Profile <i data-lucide="chevron-right"></i>
-                            </button>
+                            <div class="footer-actions">
+                                <button class="ghost-btn sm danger-text" onclick="deleteItem('resumes', ${r.id}, event)" title="Delete Resume">
+                                    <i data-lucide="trash-2"></i>
+                                </button>
+                                <button class="ghost-btn" onclick="showNotification('Profile deep-view is in development', 'info')">
+                                    View Full Profile <i data-lucide="chevron-right"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -889,19 +905,19 @@ async function renderJobs(container) {
         <div class="page-header">
             <div class="header-main">
                 <h1 class="page-title">Job Positions</h1>
-                <p class="page-subtitle">Repository of strategic role requirements</p>
+                <p class="page-subtitle">Repository of all job descriptions</p>
             </div>
             <div class="header-actions-row">
                 <div class="search-mini">
                     <i data-lucide="search"></i>
-                    <input type="text" placeholder="Search roles..." id="job-filter">
+                    <input type="text" placeholder="Filter by title or company..." id="job-filter">
                 </div>
                 <button class="primary-btn sm" onclick="switchView('evaluate')">
-                    <i data-lucide="plus"></i> Define Role
+                    <i data-lucide="plus"></i> New Position
                 </button>
             </div>
         </div>
-        <div class="library-grid" id="job-list">
+        <div class="library-grid job-library" id="job-list">
             <div class="loader-inline"></div>
         </div>
     `;
@@ -916,8 +932,8 @@ async function renderJobs(container) {
             list.innerHTML = `
                 <div class="empty-state-container glass-card">
                     <div class="empty-icon"><i data-lucide="briefcase"></i></div>
-                    <h3>No Job Profiles</h3>
-                    <p>Create a job description to start matching candidates.</p>
+                    <h3>No Job Positions</h3>
+                    <p>Add your first job description to start matching candidates.</p>
                 </div>
             `;
             if (window.lucide) lucide.createIcons();
@@ -927,38 +943,45 @@ async function renderJobs(container) {
         const renderItems = (items) => {
             list.innerHTML = items.map(j => `
                 <div class="prof-card job-item slide-up">
-                    <div class="card-edge job"></div>
+                    <div class="card-edge"></div>
                     <div class="card-content">
                         <div class="card-top">
                             <div class="user-meta">
-                                <div class="prof-avatar job"><i data-lucide="briefcase"></i></div>
+                                <div class="prof-avatar violet"><i data-lucide="briefcase"></i></div>
                                 <div class="prof-info">
                                     <h3>${j.title}</h3>
-                                    <span>${j.company || 'Internal Entity'}</span>
+                                    <span>${j.company || 'Direct Hire'}</span>
                                 </div>
+                            </div>
+                            <div class="eval-count-badge" title="Candidates Analyzed">
+                                <i data-lucide="users"></i> ${j.evaluation_count || 0}
                             </div>
                         </div>
                         
                         <div class="card-mid">
                             <div class="mini-stat">
-                                <span class="label">Exp required</span>
+                                <span class="label">Exp Required</span>
                                 <span class="value">${(j.experience_required || 0).toFixed(0)}+ Years</span>
                             </div>
                             <div class="mini-stat">
-                                <span class="label">Matches Run</span>
-                                <span class="value">${j.evaluation_count || 0} Candidates</span>
+                                <span class="label">Skills Required</span>
+                                <span class="value">${(j.required_skills || []).length} Keys</span>
                             </div>
                         </div>
 
-                        <div class="card-tags">
-                            ${(j.required_skills || []).slice(0, 4).map(s => `<span class="modern-tag violet">${s}</span>`).join('')}
-                            ${(j.required_skills || []).length > 4 ? `<span class="modern-tag more">+${j.required_skills.length - 4}</span>` : ''}
-                        </div>
-
-                        <div class="card-footer">
-                            <button class="primary-btn sm outline" onclick="switchView('evaluate')">
-                                <i data-lucide="play-circle"></i> Run New Batch
-                            </button>
+                        <div class="card-bottom">
+                            <div class="card-tags">
+                                ${(j.required_skills || []).slice(0, 3).map(s => `<span class="tag-sm">${s}</span>`).join('')}
+                                ${j.required_skills && j.required_skills.length > 3 ? `<span class="tag-sm more">+${j.required_skills.length - 3}</span>` : ''}
+                            </div>
+                            <div class="card-actions">
+                                <button class="ghost-btn sm delete-btn" onclick="deleteItem('jobs', ${j.id}, event)" title="Delete Job">
+                                    <i data-lucide="trash-2"></i>
+                                </button>
+                                <button class="ghost-btn sm" onclick="showNotification('JD editing coming soon', 'info')">
+                                    View Repo <i data-lucide="chevron-right"></i>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -996,6 +1019,9 @@ function renderHistory(container) {
                     <i data-lucide="search"></i>
                     <input type="text" placeholder="Search history..." id="history-filter">
                 </div>
+                <button class="ghost-btn danger-text sm" id="clear-history-btn" title="Clear All History">
+                    <i data-lucide="trash-2"></i> Clear All
+                </button>
             </div>
         </div>
         <div class="library-grid history-library" id="history-list">
@@ -1005,9 +1031,20 @@ function renderHistory(container) {
 
     if (window.lucide) lucide.createIcons();
 
-    fetchApi('/api/analytics').then(data => {
+    document.getElementById('clear-history-btn').addEventListener('click', async () => {
+        if (!confirm('Are you SURE you want to permanently delete ALL evaluation history? This cannot be undone.')) return;
+        try {
+            await fetchApi('/api/history', { method: 'DELETE' });
+            showNotification('Evaluation history cleared', 'success');
+            renderHistory(container);
+        } catch (err) {
+            showNotification('Failed to clear history', 'error');
+        }
+    });
+
+    fetchApi('/api/evaluations').then(data => {
         const list = document.getElementById('history-list');
-        let evals = data.recent_evaluations || [];
+        let evals = data || [];
 
         if (evals.length === 0) {
             list.innerHTML = `
@@ -1022,14 +1059,15 @@ function renderHistory(container) {
         }
 
         // Sort by date descending (latest analysis first)
-        evals.sort((a, b) => new Date(b.date) - new Date(a.date));
+        evals.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
         const renderItems = (items) => {
             list.innerHTML = items.map(e => {
-                const score = e.score || 0;
+                const score = e.overall_score || 0;
                 const color = score >= 75 ? 'success' : (score >= 50 ? 'warning' : 'danger');
-                const dateObj = new Date(e.date);
+                const dateObj = new Date(e.created_at);
                 const formattedDate = dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                const statusBadge = e.status === 'completed' ? '' : `<span class="modern-tag" style="margin-left:6px;font-size:0.7rem;opacity:0.7">${e.status}</span>`;
 
                 return `
                     <div class="prof-card history-item slide-up">
@@ -1039,8 +1077,8 @@ function renderHistory(container) {
                                 <div class="user-meta">
                                     <div class="prof-avatar ${color}"><i data-lucide="file-check"></i></div>
                                     <div class="prof-info">
-                                        <h3>${e.candidate || 'Unknown Candidate'}</h3>
-                                        <span>Target: ${e.job || 'No Position Defined'}</span>
+                                        <h3>${e.candidate_name || 'Unknown Candidate'}${statusBadge}</h3>
+                                        <span>Target: ${e.job_title || 'No Position Defined'}</span>
                                     </div>
                                 </div>
                                 <div class="item-badge ${color}">${score.toFixed(0)}%</div>
@@ -1048,9 +1086,14 @@ function renderHistory(container) {
                             
                             <div class="card-footer">
                                 <span class="date">Analyzed on ${formattedDate}</span>
-                                <button class="ghost-btn" onclick="showNotification('Detailed report access is coming soon', 'info')">
-                                    Full Report <i data-lucide="chevron-right"></i>
-                                </button>
+                                <div class="footer-actions">
+                                    <button class="ghost-btn sm danger-text" onclick="deleteItem('history', ${e.id}, event)" title="Remove from History">
+                                        <i data-lucide="trash-2"></i>
+                                    </button>
+                                    <button class="ghost-btn" onclick="showNotification('Detailed report access is coming soon', 'info')">
+                                        Full Report <i data-lucide="chevron-right"></i>
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -1065,8 +1108,8 @@ function renderHistory(container) {
         filterInput.addEventListener('input', (event) => {
             const val = event.target.value.toLowerCase();
             const filtered = evals.filter(e =>
-                (e.candidate || '').toLowerCase().includes(val) ||
-                (e.job || '').toLowerCase().includes(val)
+                (e.candidate_name || '').toLowerCase().includes(val) ||
+                (e.job_title || '').toLowerCase().includes(val)
             );
             renderItems(filtered);
         });
@@ -1096,4 +1139,33 @@ function renderAbout(container) {
             </ul>
         </div>
     `;
+}
+
+async function deleteItem(type, id, event) {
+    if (event) event.stopPropagation();
+
+    const typeLabel = type === 'resumes' ? 'Resume' : type === 'jobs' ? 'Job' : 'Evaluation';
+    const confirmMsg = `Are you sure you want to permanently delete this ${typeLabel}? This cannot be undone.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        await fetchApi(`/api/${type}/${id}`, { method: 'DELETE' });
+        showNotification(`${typeLabel} deleted successfully`, 'success');
+
+        // Map delete type to the correct view to refresh
+        const viewMap = { resumes: 'resumes', jobs: 'jobs', history: 'history' };
+        const targetView = viewMap[type] || 'dashboard';
+
+        // Update nav active link to match the view we're refreshing
+        document.querySelectorAll('.nav-link').forEach(link => {
+            link.classList.toggle('active', link.getAttribute('data-view') === targetView);
+        });
+
+        switchView(targetView);
+    } catch (err) {
+        console.error('Delete error:', err);
+        let errMsg = 'Failed to delete item';
+        try { errMsg = JSON.parse(err.message).detail || errMsg; } catch (_) { }
+        showNotification(errMsg, 'error');
+    }
 }

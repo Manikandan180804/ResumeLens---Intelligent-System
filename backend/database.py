@@ -46,7 +46,7 @@ class Resume(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
-    evaluations = relationship("Evaluation", back_populates="resume")
+    evaluations = relationship("Evaluation", back_populates="resume", cascade="all, delete-orphan")
 
 
 class JobDescription(Base):
@@ -65,7 +65,7 @@ class JobDescription(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     # Relationships
-    evaluations = relationship("Evaluation", back_populates="job_description")
+    evaluations = relationship("Evaluation", back_populates="job_description", cascade="all, delete-orphan")
 
 
 class Evaluation(Base):

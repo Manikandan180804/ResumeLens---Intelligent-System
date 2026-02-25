@@ -214,13 +214,21 @@ async def get_resume(resume_id: int, db: Session = Depends(get_db)):
 
 @app.delete("/api/resumes/{resume_id}")
 async def delete_resume(resume_id: int, db: Session = Depends(get_db)):
-    """Delete a resume."""
+    """Delete a resume and all its linked evaluations."""
     resume = db.query(Resume).filter(Resume.id == resume_id).first()
     if not resume:
         raise HTTPException(status_code=404, detail="Resume not found")
-    db.delete(resume)
-    db.commit()
-    return {"message": f"Resume {resume_id} deleted"}
+    try:
+        # Use synchronize_session='fetch' so SQLAlchemy keeps its session
+        # identity map consistent — avoids cascade conflicts with ORM delete
+        db.query(Evaluation).filter(Evaluation.resume_id == resume_id).delete(synchronize_session="fetch")
+        db.delete(resume)
+        db.commit()
+        return {"message": f"Resume {resume_id} and its evaluations deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting resume {resume_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete resume: {str(e)}")
 
 
 # ─────────────────────────────── Job Description Endpoints ───────────────────────────────
@@ -335,18 +343,6 @@ async def get_job(job_id: int, db: Session = Depends(get_db)):
         "parsed_data": job.parsed_data or {},
         "created_at": job.created_at.isoformat() if job.created_at else None,
     }
-
-
-@app.delete("/api/jobs/{job_id}")
-async def delete_job(job_id: int, db: Session = Depends(get_db)):
-    """Delete a job description."""
-    job = db.query(JobDescription).filter(JobDescription.id == job_id).first()
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    db.delete(job)
-    db.commit()
-    return {"message": f"Job {job_id} deleted"}
-
 
 # ─────────────────────────────── Evaluation Endpoints ───────────────────────────────
 
@@ -627,6 +623,44 @@ async def get_analytics(db: Session = Depends(get_db)):
             for e in sorted(evaluations, key=lambda x: x.created_at or datetime.min, reverse=True)[:5]
         ]
     }
+
+
+@app.delete("/api/jobs/{job_id}")
+async def delete_job(job_id: int, db: Session = Depends(get_db)):
+    """Delete a job position and all its linked evaluations."""
+    job = db.query(JobDescription).filter(JobDescription.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        # Use synchronize_session='fetch' so SQLAlchemy keeps its session
+        # identity map consistent — avoids cascade conflicts with ORM delete
+        db.query(Evaluation).filter(Evaluation.job_description_id == job_id).delete(synchronize_session="fetch")
+        db.delete(job)
+        db.commit()
+        return {"message": f"Job {job_id} and its evaluations deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting job {job_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete job: {str(e)}")
+
+
+@app.delete("/api/history/{eval_id}")
+async def delete_evaluation(eval_id: int, db: Session = Depends(get_db)):
+    """Delete a specific evaluation from history."""
+    evaluation = db.query(Evaluation).filter(Evaluation.id == eval_id).first()
+    if not evaluation:
+        raise HTTPException(status_code=404, detail="Evaluation record not found")
+    db.delete(evaluation)
+    db.commit()
+    return {"message": f"Evaluation {eval_id} removed from history"}
+
+
+@app.delete("/api/history")
+async def clear_history(db: Session = Depends(get_db)):
+    """Clear all evaluation history."""
+    db.query(Evaluation).delete()
+    db.commit()
+    return {"message": "All evaluation history cleared"}
 
 
 # ─────────────────────────────── Main ───────────────────────────────

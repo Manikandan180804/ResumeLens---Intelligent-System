@@ -31,9 +31,10 @@ class Settings:
 
     # LLM
     LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "local")
-    LLM_MODEL: str = os.getenv("LLM_MODEL", "gpt-3.5-turbo")
+    LLM_MODEL: str = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile")
     USE_LOCAL_LLM: bool = os.getenv("USE_LOCAL_LLM", "true").lower() == "true"
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
 
     # API
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
