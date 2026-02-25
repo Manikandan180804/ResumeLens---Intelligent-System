@@ -11,11 +11,9 @@ langchain-core>=0.1.23
 # Vector Database & Embeddings
 faiss-cpu>=1.7.4
 sentence-transformers>=2.3.1
-
-# PyTorch - CPU only (avoids downloading 4GB of CUDA/GPU libraries on Render)
-# These +cpu variants are resolved via --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.5.1+cpu
-torchvision==0.20.1+cpu
+# NOTE: torch & torchvision are NOT listed here on purpose.
+# They are pre-installed via the build command using --index-url
+# to force CPU-only wheels (avoids downloading 4GB of NVIDIA CUDA packages).
 
 # PDF & Document Processing
 PyPDF2>=3.0.1
