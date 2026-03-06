@@ -52,8 +52,16 @@ app.add_middleware(
 _FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 
 if _FRONTEND_DIR.exists():
-    # Mount static assets (css/, js/) at /static
+    # Mount static assets (css/, js/) at /static (for backward compatibility)
     app.mount("/static", StaticFiles(directory=str(_FRONTEND_DIR)), name="frontend_static")
+    
+    # Also mount subdirectories at root level for relative path support in index.html
+    if (_FRONTEND_DIR / "css").exists():
+        app.mount("/css", StaticFiles(directory=str(_FRONTEND_DIR / "css")), name="css")
+    if (_FRONTEND_DIR / "js").exists():
+        app.mount("/js", StaticFiles(directory=str(_FRONTEND_DIR / "js")), name="js")
+    if (_FRONTEND_DIR / "assets").exists():
+        app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIR / "assets")), name="assets")
 
 
 @app.on_event("startup")

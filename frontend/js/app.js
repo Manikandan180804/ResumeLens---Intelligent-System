@@ -27,6 +27,7 @@ window.switchView = switchView;
 window.renderDashboard = renderDashboard;
 window.renderEvaluate = renderEvaluate;
 window.renderFullResult = renderFullResult;
+window.deleteItem = deleteItem;
 
 document.addEventListener('DOMContentLoaded', () => {
     // Initialize Lucide icons
@@ -466,6 +467,21 @@ function renderEvaluate(container) {
     resumeZone.addEventListener('click', () => resumeInput.click());
     resumeInput.addEventListener('change', (e) => handleFilePreview(e, resumePreview));
 
+    // Support Drag and Drop for Resume
+    resumeZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        resumeZone.classList.add('dragging');
+    });
+    resumeZone.addEventListener('dragleave', () => resumeZone.classList.remove('dragging'));
+    resumeZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        resumeZone.classList.remove('dragging');
+        if (e.dataTransfer.files.length) {
+            resumeInput.files = e.dataTransfer.files;
+            handleFilePreview({ target: resumeInput }, resumePreview);
+        }
+    });
+
     // JD Upload zone trigger
     const jdZone = document.getElementById('jd-upload-zone');
     const jdInput = document.getElementById('jd-file');
@@ -473,6 +489,21 @@ function renderEvaluate(container) {
 
     jdZone.addEventListener('click', () => jdInput.click());
     jdInput.addEventListener('change', (e) => handleFilePreview(e, jdPreview));
+
+    // Support Drag and Drop for JD
+    jdZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        jdZone.classList.add('dragging');
+    });
+    jdZone.addEventListener('dragleave', () => jdZone.classList.remove('dragging'));
+    jdZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        jdZone.classList.remove('dragging');
+        if (e.dataTransfer.files.length) {
+            jdInput.files = e.dataTransfer.files;
+            handleFilePreview({ target: jdInput }, jdPreview);
+        }
+    });
 }
 
 function handleFilePreview(event, previewContainer) {
@@ -503,66 +534,72 @@ function handleFilePreview(event, previewContainer) {
 
 async function handleRunEvaluation() {
     const runBtn = document.getElementById('run-eval-btn');
-    const resumeFile = document.getElementById('resume-file').files[0];
+    const resumeInput = document.getElementById('resume-file');
+    const resumeFile = resumeInput ? resumeInput.files[0] : null;
     const resumeText = document.getElementById('resume-text').value;
-    const jdFile = document.getElementById('jd-file').files[0];
+    const jdInput = document.getElementById('jd-file');
+    const jdFile = jdInput ? jdInput.files[0] : null;
     const jdTitle = document.getElementById('jd-title').value;
     const jdText = document.getElementById('jd-text').value;
     const jdCompany = document.getElementById('jd-company').value;
 
-    console.log('Starting Evaluation:', { resumeFile, resumeText: !!resumeText, jdFile, jdTitle, jdText: !!jdText });
+    console.log('[Evaluation] Initiating...', { hasResumeFile: !!resumeFile, hasResumeText: !!resumeText, hasJDFile: !!jdFile, jdTitle });
 
-    if (runBtn.disabled) return; // Prevent parallel submission
+    if (runBtn.disabled) return;
 
+    // Validate Resume
     if (!resumeFile && (!resumeText || !resumeText.trim())) {
-        showNotification('Please upload a resume or paste resume text', 'warning');
+        showNotification('Missing Resume: Please upload a file (PDF/IMG) or paste the resume text.', 'warning');
         return;
     }
 
-    if (!jdFile && (!jdTitle || !jdTitle.trim() || !jdText || !jdText.trim())) {
-        showNotification('Kindly provide both Job Title and Description to proceed', 'warning');
+    // Validate Job requirements - must have title and description
+    if (!jdFile && !jdText.trim()) {
+        showNotification('Missing Job Description: Please paste the JD or upload a JD file.', 'warning');
+        return;
+    }
+
+    if (!jdTitle.trim()) {
+        showNotification('Missing Job Title: Please provide a title for the position (e.g., Python Developer).', 'warning');
         return;
     }
 
     // Enter loading state
     runBtn.disabled = true;
-    runBtn.innerHTML = '<span class="loader-sm"></span> Analyzing...';
+    const originalBtnHTML = runBtn.innerHTML;
+    runBtn.innerHTML = '<span class="loader-sm"></span> Syncing...';
+
     const loader = document.getElementById('eval-loading');
-    loader.classList.remove('hidden');
+    if (loader) loader.classList.remove('hidden');
 
     try {
-        // 1. Upload Resume
+        // 1. Upload/Process Resume
         let resumeId;
+        const resumeFormData = new FormData();
         if (resumeFile) {
-            console.log('Uploading Resume File...');
-            const formData = new FormData();
-            formData.append('file', resumeFile);
-            const res = await fetchApi('/api/resumes/upload', { method: 'POST', body: formData }, true);
-            resumeId = res.id;
+            console.log('[Evaluation] Uploading resume file...');
+            resumeFormData.append('file', resumeFile);
         } else {
-            console.log('Uploading Pasted Resume Text...');
-            const formData = new FormData();
-            formData.append('resume_text', resumeText);
-            const res = await fetchApi('/api/resumes/upload', { method: 'POST', body: formData }, true);
-            resumeId = res.id;
+            console.log('[Evaluation] Uploading resume text...');
+            resumeFormData.append('resume_text', resumeText);
         }
+        const resumeRes = await fetchApi('/api/resumes/upload', { method: 'POST', body: resumeFormData }, true);
+        resumeId = resumeRes.id;
 
-        // 2. Create/Upload Job
+        // 2. Upload/Process Job
         let jobId;
+        const jobFormData = new FormData();
         if (jdFile) {
-            console.log('Uploading Job File...');
-            const formData = new FormData();
-            formData.append('file', jdFile);
-            if (jdTitle) formData.append('title', jdTitle);
-            if (jdCompany) formData.append('company', jdCompany);
-
-            const res = await fetchApi('/api/jobs/upload', { method: 'POST', body: formData }, true);
-            jobId = res.id;
+            console.log('[Evaluation] Uploading JD file...');
+            jobFormData.append('file', jdFile);
+            if (jdTitle) jobFormData.append('title', jdTitle);
+            if (jdCompany) jobFormData.append('company', jdCompany);
+            const jobRes = await fetchApi('/api/jobs/upload', { method: 'POST', body: jobFormData }, true);
+            jobId = jobRes.id;
         } else {
-            console.log('Creating Job Entry...');
+            console.log('[Evaluation] Creating JD entry...');
             const jobRes = await fetchApi('/api/jobs', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     title: jdTitle,
                     company: jdCompany || 'N/A',
@@ -572,30 +609,28 @@ async function handleRunEvaluation() {
             jobId = jobRes.id;
         }
 
-        console.log('Starting Analysis...', { resumeId, jobId });
-        // 3. Run Sync Evaluation (wait for heavy AI analysis)
+        // 3. Run High-Precision Evaluation
+        console.log('[Evaluation] Triggering analysis workflow...', { resumeId, jobId });
         const evalRes = await fetchApi('/api/evaluate/sync', {
             method: 'POST',
             body: JSON.stringify({ resume_id: resumeId, job_id: jobId })
         });
 
-        console.log('Analysis Complete:', evalRes);
-
-        // Success!
-        loader.classList.add('hidden');
+        console.log('[Evaluation] Successful!', evalRes);
+        if (loader) loader.classList.add('hidden');
         renderFullResult(evalRes);
 
     } catch (e) {
-        loader.classList.add('hidden');
+        if (loader) loader.classList.add('hidden');
         runBtn.disabled = false;
-        runBtn.innerHTML = '<i data-lucide="zap"></i> Run Evaluation';
+        runBtn.innerHTML = originalBtnHTML;
         if (window.lucide) lucide.createIcons();
 
-        console.error('Evaluation Error:', e);
-        let errorMsg = 'Evaluation failed';
+        console.error('[Evaluation] Error occurred:', e);
+        let errorMsg = 'AI Evaluation encountered an unexpected error.';
         try {
-            const errorObj = JSON.parse(e.message);
-            errorMsg = errorObj.detail || errorMsg;
+            const errorObj = typeof e.message === 'string' && e.message.startsWith('{') ? JSON.parse(e.message) : null;
+            errorMsg = (errorObj && errorObj.detail) ? errorObj.detail : e.message || errorMsg;
         } catch (err) {
             errorMsg = e.message || errorMsg;
         }
@@ -747,6 +782,75 @@ async function renderRankingsForJob(jobId) {
 // UTILS
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Show a custom confirmation modal.
+ * Returns a Promise that resolves (true) on Confirm, or resolves (false) on Cancel.
+ * The modal stays open until the user explicitly clicks a button.
+ */
+function showConfirmModal(title = 'Confirm Deletion', message = 'Are you sure you want to delete this item? This cannot be undone.') {
+    return new Promise((resolve) => {
+        // Remove any existing modal
+        const existing = document.getElementById('custom-confirm-modal');
+        if (existing) existing.remove();
+
+        const backdrop = document.createElement('div');
+        backdrop.id = 'custom-confirm-modal';
+        backdrop.className = 'confirm-backdrop';
+        backdrop.innerHTML = `
+            <div class="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+                <div class="modal-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                </div>
+                <h3 id="modal-title">${title}</h3>
+                <p>${message}</p>
+                <div class="modal-actions">
+                    <button class="modal-cancel-btn" id="modal-cancel-btn">Cancel</button>
+                    <button class="modal-delete-btn" id="modal-confirm-btn">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" width="16" height="16">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                        Delete
+                    </button>
+                </div>
+            </div>
+        `;
+
+        document.body.appendChild(backdrop);
+
+        // Animate in
+        requestAnimationFrame(() => {
+            requestAnimationFrame(() => backdrop.classList.add('visible'));
+        });
+
+        const cleanup = (result) => {
+            backdrop.classList.remove('visible');
+            setTimeout(() => backdrop.remove(), 250);
+            resolve(result);
+        };
+
+        document.getElementById('modal-cancel-btn').addEventListener('click', () => cleanup(false));
+        document.getElementById('modal-confirm-btn').addEventListener('click', () => cleanup(true));
+
+        // Click outside to cancel
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop) cleanup(false);
+        });
+
+        // Escape key to cancel
+        const escHandler = (e) => {
+            if (e.key === 'Escape') {
+                document.removeEventListener('keydown', escHandler);
+                cleanup(false);
+            }
+        };
+        document.addEventListener('keydown', escHandler);
+    });
+}
+
 async function fetchApi(path, options = {}, isMultipart = false) {
     const config = { ...options };
     if (!isMultipart && config.body && !config.headers) {
@@ -783,7 +887,7 @@ function formatMarkdown(text) {
         .replace(/^### (.*$)/gm, '<h3 style="margin-top:1.2rem">$1</h3>')
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.*?)\*/g, '<em>$1</em>')
-        .replace(/^• (.*$)/gm, '<div class="rec-list-item"><span>•</span> $1</div>')
+        .replace(/^[•\-\*\+] (.*$)/gm, '<div class="rec-list-item"><span>•</span> $1</div>')
         .replace(/\n\n/g, '</p><p>')
         .replace(/\n/g, '<br>');
 }
@@ -1034,7 +1138,11 @@ function renderHistory(container) {
     if (window.lucide) lucide.createIcons();
 
     document.getElementById('clear-history-btn').addEventListener('click', async () => {
-        if (!confirm('Are you SURE you want to permanently delete ALL evaluation history? This cannot be undone.')) return;
+        const confirmed = await showConfirmModal(
+            'Clear All History',
+            'Are you sure you want to permanently delete ALL evaluation history? This cannot be undone.'
+        );
+        if (!confirmed) return;
         try {
             await fetchApi('/api/history', { method: 'DELETE' });
             showNotification('Evaluation history cleared', 'success');
@@ -1092,7 +1200,7 @@ function renderHistory(container) {
                                     <button class="ghost-btn sm danger-text" onclick="deleteItem('history', ${e.id}, event)" title="Remove from History">
                                         <i data-lucide="trash-2"></i>
                                     </button>
-                                    <button class="ghost-btn" onclick="showNotification('Detailed report access is coming soon', 'info')">
+                                    <button class="ghost-btn" onclick="viewDetailedReport(${e.id})">
                                         Full Report <i data-lucide="chevron-right"></i>
                                     </button>
                                 </div>
@@ -1143,12 +1251,40 @@ function renderAbout(container) {
     `;
 }
 
+
+async function viewDetailedReport(evalId) {
+    console.log(`[History] Fetching detailed report for ID: ${evalId}`);
+    try {
+        const result = await fetchApi(`/api/evaluations/${evalId}`);
+        renderFullResult(result);
+        // Add a back button that goes to history instead of evaluate
+        const backBtn = document.querySelector('.back-link');
+        if (backBtn) {
+            backBtn.innerHTML = '<i data-lucide="arrow-left"></i> Back to History';
+            backBtn.onclick = (e) => {
+                e.preventDefault();
+                switchView('history');
+            };
+            if (window.lucide) lucide.createIcons();
+        }
+    } catch (e) {
+        console.error('Error fetching deep report:', e);
+        showNotification('Failed to load detailed analysis', 'error');
+    }
+}
+
+// Make globally accessible
+window.viewDetailedReport = viewDetailedReport;
+
 async function deleteItem(type, id, event) {
     if (event) event.stopPropagation();
 
     const typeLabel = type === 'resumes' ? 'Resume' : type === 'jobs' ? 'Job' : 'Evaluation';
-    const confirmMsg = `Are you sure you want to permanently delete this ${typeLabel}? This cannot be undone.`;
-    if (!confirm(confirmMsg)) return;
+    const confirmed = await showConfirmModal(
+        `Delete ${typeLabel}`,
+        `Are you sure you want to permanently delete this ${typeLabel}? This cannot be undone.`
+    );
+    if (!confirmed) return;
 
     try {
         await fetchApi(`/api/${type}/${id}`, { method: 'DELETE' });

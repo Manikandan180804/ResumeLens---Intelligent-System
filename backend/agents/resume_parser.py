@@ -48,6 +48,11 @@ SKILL_KEYWORDS = {
         "git", "github", "gitlab", "bitbucket", "jira", "confluence",
         "slack", "figma", "postman", "swagger", "linux", "unix", "vim",
         "visual studio", "vscode", "intellij", "eclipse", "xcode"
+    ],
+    "management": [
+        "leadership", "management", "mentoring", "strategic planning", "project management",
+        "stakeholder management", "team management", "resource planning", "agile leadership",
+        "human resources", "budgeting", "recruitment", "product management", "scrum master"
     ]
 }
 

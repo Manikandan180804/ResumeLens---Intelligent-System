@@ -9,6 +9,20 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
+# ── bidi compatibility patch ──────────────────────────────────────────────────
+# easyocr executes `from bidi import get_display` at import-time.
+# python-bidi 0.4.2 places get_display inside bidi.algorithm, NOT at the
+# top-level bidi package.  We inject it BEFORE easyocr is ever imported so
+# the import succeeds for both Resume and JD image uploads.
+try:
+    import bidi as _bidi_pkg
+    if not hasattr(_bidi_pkg, 'get_display'):
+        from bidi.algorithm import get_display as _gd
+        _bidi_pkg.get_display = _gd
+except Exception:
+    pass  # If bidi isn't installed, let easyocr report its own error.
+# ─────────────────────────────────────────────────────────────────────────────
+
 
 def extract_text_from_pdf(file_bytes: bytes) -> str:
     """Extract text from PDF file bytes."""
@@ -55,16 +69,15 @@ def extract_text_from_image(file_bytes: bytes) -> str:
         import easyocr
         import numpy as np
         from PIL import Image
-        
-        # Load image with PIL
+
+        # Load image with PIL and convert to numpy array
         image = Image.open(io.BytesIO(file_bytes))
-        # Convert to numpy array
         image_np = np.array(image)
-        
-        # Initialize reader (downloads models if missing)
-        reader = easyocr.Reader(['en'], gpu=False) # Default to CPU to be safe
+
+        # Initialize reader (downloads models on first use)
+        reader = easyocr.Reader(['en'], gpu=False)  # CPU-safe default
         results = reader.readtext(image_np)
-        
+
         return "\n".join([res[1] for res in results])
     except Exception as e:
         logger.error(f"Image OCR failed: {e}")
